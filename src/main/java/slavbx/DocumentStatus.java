@@ -1,0 +1,12 @@
+package slavbx;
+
+public enum DocumentStatus {
+    IN_PROGRESS,
+    CHECKED_OK,
+    CHECKED_NOT_OK,
+    PROCESSING_ERROR,
+    CANCELLED,
+    ACCEPTED,
+    WAIT_ACCEPTANCE,
+    WAIT_PARTICIPANT_REGISTRATION
+}
