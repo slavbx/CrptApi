@@ -57,11 +57,9 @@ public class Main {
 
         CrptApi crptApi = new CrptApi(TimeUnit.MINUTES, 5);
 
-        Scanner scanner = new Scanner(System.in);
-        System.out.println("Введите положительное число для отправки документа или 0 для выхода:");
-        while (scanner.nextInt() > 0){
-            System.out.println("Получен ответ с кодом: " + crptApi.addProductToTrade(document, signature));
-        }
+
+        System.out.println("Получен ответ с кодом: " + crptApi.addProductToTrade(document, signature));
+
         crptApi.stopLimiter();
     }
 }
