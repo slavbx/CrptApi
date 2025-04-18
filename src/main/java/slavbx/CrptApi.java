@@ -35,19 +35,29 @@ public class CrptApi {
 
         int statusCode = 0;
         if (limiter.tryAcquire()) {
-            String documentJson = null;
+            String requestBody = null;
             try {
-                documentJson = objectMapper.writeValueAsString(document);
+                requestBody = objectMapper.writeValueAsString(document);
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
-            System.out.println(documentJson);
+            requestBody = requestBody + ", signature: " + signature;
+            System.out.println(requestBody);
 
             HttpRequest request = HttpRequest.newBuilder(URI.create("https://ismp.crpt.ru/api/v3/lk/documents/create"))
                     .header("Content-Type", "application/json")
-                    .header("Signature", signature)
-                    .POST(HttpRequest.BodyPublishers.ofString(documentJson))
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
+
+            // Выводим заголовки запроса
+            System.out.println("Request Headers:");
+            for (String header : request.headers().map().keySet()) {
+                System.out.println(header + ": " + request.headers().firstValue(header).orElse(""));
+            }
+
+            // Выводим тело запроса
+            System.out.println("Request Body: " + request.bodyPublisher().get());
+
 
             client = HttpClient.newBuilder()
                     .version(HttpClient.Version.HTTP_1_1)

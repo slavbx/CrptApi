@@ -1,5 +1,6 @@
 package slavbx;
 
+import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.util.Base64;
 import java.util.List;
@@ -9,7 +10,9 @@ import java.util.concurrent.TimeUnit;
 
 public class Main {
     public static void main(String[] args) {
-        String signature = Base64.getEncoder().encodeToString(UUID.randomUUID().toString().getBytes());
+        byte[] randomBytes = new byte[512];
+        new SecureRandom().nextBytes(randomBytes);
+        String signature = Base64.getEncoder().encodeToString(randomBytes);
 
         Product product1 = new Product.Builder(
                 "583713710002",
