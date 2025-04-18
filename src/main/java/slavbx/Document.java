@@ -1,5 +1,7 @@
 package slavbx;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -13,8 +15,8 @@ public class Document {
     private final String producerInn;
     private final LocalDate productionDate;
     private final ProductionType productionType;
-    private final LocalDate regDate;
 
+    private final LocalDate regDate;
     private final Description description;
     private final boolean importRequest;
     private final List<Product> products;
@@ -29,12 +31,64 @@ public class Document {
         this.producerInn = builder.producerInn;
         this.productionDate = builder.productionDate;
         this.productionType = builder.productionType;
-        this.regDate = builder.regDate;
 
+        this.regDate = builder.regDate;
         this.description = builder.description;
         this.importRequest = builder.importRequest;
         this.products = builder.products;
         this.regNumber = builder.regNumber;
+    }
+
+    public UUID getDocId() {
+        return docId;
+    }
+
+    public DocumentStatus getDocStatus() {
+        return docStatus;
+    }
+
+    public DocumentType getDocType() {
+        return docType;
+    }
+
+    public String getOwnerInn() {
+        return ownerInn;
+    }
+
+    public String getParticipantInn() {
+        return participantInn;
+    }
+
+    public String getProducerInn() {
+        return producerInn;
+    }
+
+    public LocalDate getProductionDate() {
+        return productionDate;
+    }
+
+    public ProductionType getProductionType() {
+        return productionType;
+    }
+
+    public LocalDate getRegDate() {
+        return regDate;
+    }
+
+    public Description getDescription() {
+        return description;
+    }
+
+    public boolean isImportRequest() {
+        return importRequest;
+    }
+
+    public List<Product> getProducts() {
+        return products;
+    }
+
+    public String getRegNumber() {
+        return regNumber;
     }
 
     public static class Builder {
@@ -46,15 +100,15 @@ public class Document {
         private final String producerInn;
         private final LocalDate productionDate;
         private final ProductionType productionType;
-        private final LocalDate regDate;
 
+        private final LocalDate regDate;
         private Description description;
         private boolean importRequest;
         private List<Product> products;
         private String regNumber;
 
         public Builder(UUID docId, DocumentStatus docStatus, DocumentType docType, String ownerInn, String participantInn,
-                       String producerInn, LocalDate productionDate, ProductionType productionType, LocalDate regDate) {
+                       String producerInn, LocalDate productionDate, ProductionType productionType) {
             this.docId = docId;
             this.docStatus = docStatus;
             this.docType = docType;
@@ -63,11 +117,12 @@ public class Document {
             this.producerInn = producerInn;
             this.productionDate = productionDate;
             this.productionType = productionType;
-            this.regDate = regDate;
+            this.regDate = LocalDate.now();
+            this.regNumber = "";
         }
 
-        public Builder description(String participantInn) {
-            this.description = new Description(participantInn);
+        public Builder description(Description description) {
+            this.description = description;
             return this;
         }
 
@@ -81,14 +136,9 @@ public class Document {
             return this;
         }
 
-        public Builder regNumber(String regNumber) {
-            this.regNumber = regNumber;
-            return this;
-        }
-
         public Document build() {
             if (this.docId == null || this.docType == null || this.ownerInn == null || this.participantInn == null || this.producerInn == null ||
-                    this.productionDate == null || this.productionType == null || this.regDate == null) {
+                    this.productionDate == null || this.productionType == null) {
                 throw new IllegalStateException("Обязательные поля не заполнены!");
             }
             if (!this.description.getParticipantInn().matches("\\d{10}|\\d{12}")) {
@@ -102,11 +152,6 @@ public class Document {
             }
             if (!this.producerInn.matches("\\d{10}|\\d{12}")) {
                 throw new IllegalArgumentException("ИНН производителя товара должен быть 10 или 12 цифр");
-            }
-            try {
-                UUID.fromString(this.description.getParticipantInn());
-            } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("Идентификатор документа должен быть корректным UUID");
             }
             return new Document(this);
         }
