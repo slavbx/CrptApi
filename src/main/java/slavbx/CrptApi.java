@@ -18,90 +18,142 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
-public class CrptApi {
-    private final Limiter limiter;
+public class CrptApi implements AutoCloseable {
+    private final LimitedExecutor limitedExecutor;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final String url = "https://ismp.crpt.ru/api/v3/";
 
     public CrptApi(TimeUnit timeUnit, int requestLimit) {
+        this.limitedExecutor = new LimitedExecutor(timeUnit, requestLimit);
+        this.objectMapper = new ObjectMapperCustom();
         this.httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(20))
                 .build();
-        this.limiter = new Limiter(timeUnit, requestLimit);
-        this.limiter.start();
-        this.objectMapper = new ObjectMapper();
-        initMapper();
     }
 
-    private void initMapper() {
-        JavaTimeModule javaTimeModule = new JavaTimeModule();
-        javaTimeModule.addSerializer(LocalDate.class, new LocalDateSerializer(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
-        objectMapper.registerModule(javaTimeModule);
-        objectMapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-    }
+    public synchronized int addProductToTrade(Document document, String signature) {
+        URI uri = URI.create(url + "lk/documents/create");
+        String requestBody;
 
-    public int addProductToTrade(Document document, String signature) {
-        int statusCode = 0;
-        if (limiter.tryAcquire()) {
-            JsonNode jsonNode = objectMapper.valueToTree(document);
-            ObjectNode objectNode = (ObjectNode) jsonNode;
-            objectNode.put("signature", signature);
-
-            String requestBody = null;
-            try {
-                requestBody = objectMapper.writeValueAsString(objectNode);
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
-            }
-            HttpRequest request = HttpRequest.newBuilder(URI.create("https://ismp.crpt.ru/api/v3/lk/documents/create"))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                    .build();
-            System.out.println(requestBody);
-
-            try {
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                statusCode = response.statusCode();
-            } catch (IOException | InterruptedException e) {
-                e.printStackTrace();
-            }
+        ObjectNode objectNode = objectMapper.valueToTree(document);
+        objectNode.put("signature", signature);
+        try {
+            requestBody = objectMapper.writeValueAsString(objectNode);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Ошибка при сериализации документа", e);
         }
-        return statusCode;
+
+        System.out.println("Отправляю запрос");
+        Result result = limitedExecutor.execute(() -> sendPostRequest(uri, requestBody));
+
+        if (result.hasError()) {
+            System.out.println("Ошибка:  " + result.getException().getMessage());
+            return -1;
+        } else {
+            return result.getStatusCode();
+        }
     }
 
-    public void stopLimiter() {
-        limiter.stop();
+    private Result sendPostRequest(URI uri, String requestBody) {
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .build();
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return new Result(response.statusCode());
+        } catch (IOException  e) {
+            return new Result(-1, new RuntimeException("Ошибка ввода-вывода при отправке запроса", e));
+        } catch (InterruptedException e) {
+            return new Result(-1, new RuntimeException("Запрос был прерван", e));
+        }
     }
 
-    private class Limiter {
-        private Semaphore semaphore;
-        private int maxActions;
-        private TimeUnit timeUnit;
-        private ScheduledExecutorService scheduler;
+    @Override
+    public void close() throws Exception {
+        limitedExecutor.stop();
+    }
 
-        public Limiter(TimeUnit timeUnit, int maxActions) {
-            this.timeUnit = timeUnit;
+    private class LimitedExecutor {
+        private final Semaphore semaphore;
+        private final ScheduledExecutorService executorService;
+        private final int maxActions;
+        private final TimeUnit timeUnit;
+
+        private LimitedExecutor(TimeUnit timeUnit, int maxActions) {
+            this.semaphore = new Semaphore(maxActions, true);
+            this.executorService = Executors.newSingleThreadScheduledExecutor();
             this.maxActions = maxActions;
-            this.semaphore = new Semaphore(maxActions);
-            this.scheduler = Executors.newScheduledThreadPool(1);
+            this.timeUnit = timeUnit;
+            start();
         }
 
-        public boolean tryAcquire() {
-            return semaphore.tryAcquire();
+        private Result execute(Callable<Result> task) {
+            try {
+                semaphore.acquire();
+                try {
+                    return task.call(); // Возвращаем результат выполнения задачи
+                } catch (Exception e) {
+                    return new Result(-1, e);
+                }
+            } catch (InterruptedException e) {
+                throw new IllegalStateException("Задача была прервана", e);
+            }
+         }
+
+        private void start() {
+            executorService.scheduleAtFixedRate(() -> {
+                System.out.println("10 сек Освобождаю " + (maxActions - semaphore.availablePermits()));
+                semaphore.release(maxActions - semaphore.availablePermits());
+            }, 10, 10, timeUnit);
         }
 
-        public void stop() {
-            scheduler.shutdownNow();
-        }
-
-        public void start() {
-            scheduler.schedule(() -> semaphore.release(maxActions - semaphore.availablePermits()), 1, timeUnit);
+        private void stop() {
+            semaphore.release(maxActions - semaphore.availablePermits());
+            executorService.shutdown();
         }
     }
 
+    private class Result {
+        private final int statusCode;
+        private final Exception exception;
 
+        private Result(int statusCode, Exception exception) {
+            this.statusCode = statusCode;
+            this.exception = exception;
+        }
 
+        private Result(int statusCode) {
+            this.statusCode = statusCode;
+            this.exception = null;
+        }
+
+        public int getStatusCode() {
+            return statusCode;
+        }
+
+        public Exception getException() {
+            return exception;
+        }
+
+        public boolean hasError() {
+            return exception != null;
+        }
+    }
+
+    private class ObjectMapperCustom extends ObjectMapper {
+        JavaTimeModule javaTimeModule;
+
+        private ObjectMapperCustom() {
+            javaTimeModule = new JavaTimeModule();
+            javaTimeModule.addSerializer(LocalDate.class, new LocalDateSerializer(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
+            this.registerModule(javaTimeModule);
+            this.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
+        }
+    }
 }

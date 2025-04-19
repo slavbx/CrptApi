@@ -6,6 +6,8 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Scanner;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class Main {
@@ -55,11 +57,24 @@ public class Main {
                 .products(List.of(product1, product2))
                 .build();
 
-        CrptApi crptApi = new CrptApi(TimeUnit.MINUTES, 5);
+        CrptApi crptApi = new CrptApi(TimeUnit.SECONDS, 5);
 
 
-        System.out.println("Получен ответ с кодом: " + crptApi.addProductToTrade(document, signature));
+        //System.out.println("Получен ответ с кодом: " + crptApi.addProductToTrade(document, signature));
 
-        crptApi.stopLimiter();
+        ExecutorService executorService = Executors.newFixedThreadPool(20);
+
+        for (int i = 0; i < 50; i++) {
+            executorService.submit(() -> {
+                System.out.println(Thread.currentThread() + ": Получен ответ с кодом: " + crptApi.addProductToTrade(document, signature));
+                System.out.println(Thread.currentThread() + ": Получен ответ с кодом: " + crptApi.addProductToTrade(null, signature));
+            });
+        }
+        //executorService.shutdown();
+
+//        for (int i = 0; i < 2000000; i++) {
+//            System.out.println(": Получен ответ с кодом: " + crptApi.addProductToTrade(document, signature));
+//        }
+        //crptApi.stopLimiter();
     }
 }
